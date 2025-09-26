@@ -1,24 +1,29 @@
 import asyncio, websockets, json, socket
 
-HUB = "ws://192.168.1.148:8000/ws/nodes/"  # replace with your hub IP
+HUB = "ws://192.168.1.148:8000/ws/nodes/"
 NAME = socket.gethostname()
 
 async def run():
-    try:
-        async with websockets.connect(HUB) as ws:
-            # Register once
-            reg_msg = {"type": "register", "role": "RX", "name": NAME}
-            await ws.send(json.dumps(reg_msg))
-            print("Registered TX:", reg_msg)
+    async with websockets.connect(HUB) as ws:
+        reg = {"type": "register", "role": "RX", "name": NAME}
+        await ws.send(json.dumps(reg))
+        print("Registered RX:", reg)
 
-            # Heartbeat loop
+        async def heartbeat():
             while True:
-                hb_msg = {"type": "heartbeat", "role": "RX", "name": NAME, "status": "ok"}
-                await ws.send(json.dumps(hb_msg))
-                print("Sent heartbeat:", hb_msg)
+                hb = {"type": "heartbeat", "role": "RX", "name": NAME, "status": "ok"}
+                await ws.send(json.dumps(hb))
                 await asyncio.sleep(5)
 
-    except Exception as e:
-        print("Connection error:", e)
+        asyncio.create_task(heartbeat())
+
+        # Listen for commands
+        while True:
+            msg = await ws.recv()
+            data = json.loads(msg)
+            if data.get("type") == "route":
+                print(f"[RX] Got route command: connect to {data['from']}")
+            else:
+                print("[RX] Unknown command:", data)
 
 asyncio.run(run())
