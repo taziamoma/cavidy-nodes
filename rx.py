@@ -1,6 +1,6 @@
 import asyncio, websockets, json, socket
 
-HUB = "ws://192.168.1.148:8000/ws/test/"  # replace with your hub IP
+HUB = "ws://192.168.1.148:8000/ws/nodes/"  # replace with your hub IP
 NAME = socket.gethostname()
 
 async def run():
