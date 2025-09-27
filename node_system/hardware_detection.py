@@ -19,25 +19,63 @@ def get_video_devices() -> List[str]:
     return sorted(glob.glob('/dev/video*'))
 
 def is_capture_device(device_path: str) -> bool:
-    """Check if a video device supports capture (input)."""
+    """Check if a video device is a real HDMI capture device (not Pi built-in)."""
     try:
-        # Use v4l2-ctl to check device capabilities
+        # Get device driver information first
         result = subprocess.run([
-            'v4l2-ctl', '--device', device_path, '--list-formats-ext'
+            'v4l2-ctl', '--device', device_path, '--info'
         ], capture_output=True, text=True, timeout=5)
 
-        if result.returncode == 0:
-            # Look for capture formats (input devices)
-            output = result.stdout.lower()
-            return 'capture' in output or 'input' in output
-        return False
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        # Fallback: check if device is readable
-        try:
-            with open(device_path, 'rb') as f:
-                return True
-        except (PermissionError, OSError):
+        if result.returncode != 0:
             return False
+
+        device_info = result.stdout.lower()
+
+        # Exclude Pi built-in devices that aren't real capture devices
+        pi_builtin_drivers = [
+            'pispbe',           # Pi ISP backend
+            'rpi-hevc-dec',     # Pi hardware decoder
+            'rpi-h264-dec',     # Pi hardware decoder
+            'rpi-hevc-enc',     # Pi hardware encoder
+            'rpi-h264-enc',     # Pi hardware encoder
+            'bcm2835-codec',    # Pi codec
+            'bcm2835-isp'       # Pi ISP
+        ]
+
+        # Check if this is a Pi built-in device - EXCLUDE these
+        for builtin in pi_builtin_drivers:
+            if builtin in device_info:
+                logger.debug(f"Excluding Pi built-in device: {device_path} ({builtin})")
+                return False
+
+        # Look for USB Video Class devices (most HDMI capture cards)
+        if 'uvcvideo' in device_info:
+            logger.info(f"Found USB capture device: {device_path}")
+            return True
+
+        # Check for other external capture device indicators
+        external_indicators = [
+            'usb',
+            'hdmi',
+            'capture card',
+            'video capture',
+            'elgato',
+            'avermedia',
+            'blackmagic'
+        ]
+
+        for indicator in external_indicators:
+            if indicator in device_info:
+                logger.info(f"Found external capture device: {device_path} ({indicator})")
+                return True
+
+        # If none of the above, it's likely not a real capture device
+        logger.debug(f"Not a real capture device: {device_path}")
+        return False
+
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        logger.warning(f"Could not check device {device_path}: {e}")
+        return False
 
 def get_device_info(device_path: str) -> Dict:
     """Get detailed information about a video device."""
@@ -63,7 +101,7 @@ def get_device_info(device_path: str) -> Dict:
                 elif 'Driver name' in line:
                     info['driver'] = line.split(':')[1].strip()
 
-        # Check if it's a capture device
+        # Check if it's a real capture device
         info['is_capture'] = is_capture_device(device_path)
 
         # Get supported formats
@@ -106,7 +144,7 @@ def parse_v4l2_formats(output: str) -> List[Dict]:
 def check_hdmi_output() -> Dict:
     """Check for HDMI output capabilities."""
     hdmi_info = {
-        'available': False,
+        'available': True,  # Pi always has HDMI output capability
         'displays': [],
         'active_display': None
     }
@@ -116,17 +154,19 @@ def check_hdmi_output() -> Dict:
         result = subprocess.run(['xrandr'], capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
             hdmi_info['displays'] = parse_xrandr_output(result.stdout)
-            hdmi_info['available'] = len(hdmi_info['displays']) > 0
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
 
-    # Fallback: check for framebuffer devices
-    if not hdmi_info['available']:
+    # Fallback: Pi always has framebuffer even without monitor connected
+    if not hdmi_info['displays']:
         fb_devices = glob.glob('/dev/fb*')
         if fb_devices:
-            hdmi_info['available'] = True
-            hdmi_info['displays'] = [{'name': 'framebuffer', 'connected': True}]
+            hdmi_info['displays'] = [{'name': 'framebuffer', 'connected': False}]
+        else:
+            # Even without framebuffer detected, Pi has HDMI output capability
+            hdmi_info['displays'] = [{'name': 'hdmi', 'connected': False}]
 
+    logger.info(f"HDMI output capability: {hdmi_info['available']}")
     return hdmi_info
 
 def parse_xrandr_output(output: str) -> List[Dict]:
@@ -196,10 +236,10 @@ def get_preferred_capture_device() -> str:
 
     # Prefer USB Video Class devices (common for HDMI capture cards)
     for device in capabilities['capture_devices']:
-        if 'usb' in device.get('driver', '').lower():
+        if 'uvcvideo' in device.get('driver', '').lower():
             return device['path']
 
-    # Fallback to first available
+    # Fallback to first available real capture device
     return capabilities['capture_devices'][0]['path']
 
 if __name__ == "__main__":
