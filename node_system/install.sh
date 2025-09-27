@@ -32,7 +32,11 @@ sudo apt install -y \
 
 # Install Python dependencies
 echo "🐍 Installing Python dependencies..."
-pip3 install -r requirements.txt
+# Try system packages first
+sudo apt install -y python3-websockets python3-psutil python3-bluetooth python3-full
+
+# Install remaining packages with system override
+pip3 install --break-system-packages pybluez asyncio-mqtt ujson || echo "Some packages may need manual installation"
 
 # Set up permissions
 echo "🔐 Setting up permissions..."
