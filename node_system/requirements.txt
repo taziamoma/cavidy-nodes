@@ -1,0 +1,18 @@
+# Cavidy Node System Requirements
+
+# Core dependencies
+websockets>=11.0
+asyncio-mqtt>=0.13.0
+
+# Bluetooth support
+pybluez>=0.23
+
+# System utilities
+psutil>=5.9.0
+
+# JSON and data handling
+ujson>=5.7.0
+
+# Optional: For advanced streaming (to be added later)
+# opencv-python>=4.8.0
+# numpy>=1.24.0
